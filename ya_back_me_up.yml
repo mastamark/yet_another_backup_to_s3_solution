@@ -6,3 +6,8 @@ example_config:
   - /etc/group
   - /etc/mail
   - /whatever/you/need
+  pre-flight:
+  - /some/script.sh
+  - /another/script.sh
+  post-flight:
+  - /cleanup/script.sh
