@@ -1,0 +1,8 @@
+--- 
+example_config: 
+  maxbackups: 
+  - 14
+  files: 
+  - /etc/group
+  - /etc/mail
+  - /whatever/you/need
