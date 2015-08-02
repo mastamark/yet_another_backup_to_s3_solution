@@ -83,7 +83,7 @@ begin
       when '--help', '-h'
         puts <<-EOF
 ya_configure_backup.rb [OPTIONS]
-Ex: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.conf
+Ex: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.conf --preflight /bin/backup_prep.sh
 
 
 OPTIONS:
