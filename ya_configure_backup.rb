@@ -3,52 +3,137 @@
 # Yet Another Backup to S3 Solution - ya_configure_backup.rb 
 
 # Configures backups to ya_backup config yaml file and writes out cron file based on arguments passed when we invoke this script
-# Example use: ./ya_configure_backups.rb yet-another-server-mail-config mail_config 7 daily /etc/mail,/some/file.php
+# Example use: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.php
 
 require 'rubygems'
+require 'getoptlong'
 require 'fileutils'
 require 'yaml'
 require 'tempfile'
 
-# Populate from arguments 
-s3_bucket = ARGV[0] 
-s3_prefix = ARGV[1]
-max_backups = ARGV[2]
-frequency = ARGV[3]
-files_to_backup = ARGV[4].split(',')
+# Define some constants and variables
+s3_bucket = nil
+s3_prefix = nil
+frequency = nil
+max_backups = 14
+files_to_backup = []
+encryption = ""
+encrypt_for = ""
+backup_control_file = "/etc/ya_back_me_up.yml"
+ya_backup_path = "/root/ya_backup/ya_backup.rb"
+backup_cron_skel_file = "/root/ya_backup/ya_backup_cron_skel"
 
-# Make sure we passed needed arguments 
-if s3_bucket.nil? 
-  puts "Needed arguments seem to be missing.  Invoke backup script and pass along: s3_bucket_name s3_backupfile_prefix max_backups frequency /files/to/,/backup.sh" 
-  puts "Example: ./ya_backup.rb yet-another-server-mail-config mail_config 7 daily /etc/mail,/some/other/mail/file.cf"
-  exit 1
-end 
 
-# Probably needlessly complex sanity checks and other normalizing stuff
+begin
+  opts = GetoptLong.new(
+    [ '--bucket', '-b', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--backup-name', '-n', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--daily', GetoptLong::NO_ARGUMENT ],
+    [ '--hourly', GetoptLong::NO_ARGUMENT ],
+    [ '--weekly', GetoptLong::NO_ARGUMENT ],
+    [ '--monthly', GetoptLong::NO_ARGUMENT ],
+    [ '--max-backups', '-m', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--files', '-f', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--encrypt', '-e', GetoptLong::NO_ARGUMENT ],
+    [ '--encrypt-for', '-u', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--control-file', '-c', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--skel-file', '-s', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--ya-backup-app-path', '-a', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--help', '-h', GetoptLong::NO_ARGUMENT ]
+  )
+
+  opts.each do |opt, arg|
+    case opt
+      when '--bucket', '-b'
+        s3_bucket = arg
+      when '--backup-name', '-n'
+        s3_prefix = arg
+      when '--max-backups', '-m'
+        max_backups = arg
+      when '--files', '-f'
+        arg.split(',').each do |i|
+          files_to_backup << i
+        end
+      when '--hourly'
+        frequency = "hourly"
+      when '--daily'
+        frequency = "daily"
+      when '--weekly'
+        frequency = "weekly"
+      when '--monthly'
+        frequency = "monthly"
+      when '--encrypt', '-e'
+        encryption = "--encrypt"
+      when '--encrypt-for', '-u'
+        encrypt_for = "--encrypt-for " + arg
+      when '--control-file', '-c'
+        backup_control_file = arg
+      when '--skel-file', '-s'
+        backup_cron_skel_file = arg
+      when '--ya-backup-app-path', '-a'
+        ya_backup_path = arg
+      when '--help', '-h'
+        puts <<-EOF
+ya_configure_backup.rb [OPTIONS]
+Ex: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.conf
+
+
+OPTIONS:
+-b, --bucket [string]:
+  The name of the bucket you want to upload to.  Required.
+  
+-n, --backup-name [string]:
+  The name of the backup, used for both the prefix of the backup file itself as well as
+  for finding the information for the backup in the control file. Required.
+  
+-m, --max-backups:
+  The quantity of backups to store before we delete the oldest.  Optional, defaults to 14.
+  
+-f, --files [csv string]:
+  A csv list of files with full paths to (recursively) backup. Required.
+  Eg, /etc/some/folder,/some/file.inc,/yet/more/crap
+  
+--hourly, --daily, --weekly, --monthly:
+  The period we want to be doing the backups.  Eg, "daily" backup.  Required.
+  
+-e, --encrypt:
+  Toggles encryption via gpg of the tar file before uploading to s3.  Optional, although
+  if provided you must also provide the '--encrypt-for' flag.
+  
+-u, --encrypt-for [string]:
+  Used in conjunction with the '--encrypt' flag to provide the information from your gpg
+  keychain to identify what user to encrypt the data for.  
+  Eg, 'Mark' or 'some.guy@gmail.com.' Optional.
+  
+-c, --control-file [string]:
+  Allows overriding of default location of backups control file and name.  Optional, 
+  defaults to '/etc/ya_back_me_up.yml'    
+  
+-s, --skel-file [string]:
+  Allows overriding of default location of cron skel file.  Optional, 
+  defaults to '/root/ya_backup/ya_backup_cron_skel' 
+  
+-a, --ya-backup-app-path [string]:
+  Allows overriding of default location of ya_backup.rb script.  Optional, 
+  defaults to '/root/ya_backup/ya_backup.rb'
+        EOF
+        exit 0
+    end
+  end
+  
+rescue GetoptLong::InvalidOption => ex
+  puts "Needed arguments seem to be incorrect.  Try --help."
+end
+
+# Sanity Checks for required flags and building cron file from options.
+if s3_bucket.nil? || s3_prefix.nil? || frequency.nil? || files_to_backup.empty?
+  raise "Needed arguments are missing.  Try --help."
+end
 max_backups = max_backups.to_i
 if max_backups == 0
   puts "maximum backups value is not valid!"
   exit 1
 end
-
-case frequency
-  when "hourly"
-    puts "Configuring for hourly backups"
-  when "daily"
-    puts "Configuring for daily backups"
-  when "weekly"
-    puts "Configuring for weekly backups"
-  when "monthly"
-    puts "Configuring for monthly backups"
-  else
-    puts "Unknown backup frequency!  Please choose 'hourly','daily','weekly' or 'monthly'"
-    exit 1
-end
-
-
-# define some constants 
-BACKUP_CONTROL_FILE = "/etc/ya_back_me_up.yml"
-BACKUP_CRON_SKEL_FILE = "/root/ya_backup_cron_skel"
 target_cronfile="/etc/cron.#{frequency}/#{s3_prefix}_backup"
 
 #
@@ -57,10 +142,10 @@ target_cronfile="/etc/cron.#{frequency}/#{s3_prefix}_backup"
 
 puts "Reading in config file hash and adding out our new backup values"
 # Read in yaml config file, verify the contents look valid, and then add new backup hash values and write out.
-if File.exists?(BACKUP_CONTROL_FILE)
-  backup_config_hash = YAML.load(File.open(BACKUP_CONTROL_FILE))
+if File.exists?(backup_control_file)
+  backup_config_hash = YAML.load(File.open(backup_control_file))
     if ! backup_config_hash.is_a?(Hash)
-      puts "Config file found at #{BACKUP_CONTROL_FILE} does not appear to be formatted correctly!"
+      puts "Config file found at #{backup_control_file} does not appear to be formatted correctly!"
       exit(1)
     end
   puts "Found existing backup control file.  Successfully read in values for modification!"
@@ -74,10 +159,10 @@ end
 backup_config_hash[s3_prefix] = {"maxbackups" => [max_backups], "files" => files_to_backup}
 
 # Write out new hash back to yaml file
-File.open(BACKUP_CONTROL_FILE, "w") do |f|
+File.open(backup_control_file, "w") do |f|
   f << backup_config_hash.to_yaml
 end
-FileUtils.chmod 0700, BACKUP_CONTROL_FILE, :verbose => true
+FileUtils.chmod 0700, backup_control_file, :verbose => true
 puts "Backup config files successfully written to control file"
 
 #
@@ -88,10 +173,13 @@ puts "Backup config files successfully written to control file"
 puts "Reading in backup cron skel from attachment and transforming in tempfile"
 path = "/tmp/cronconfig"
 temp_file = Tempfile.new('cronconfig')
-File.open(BACKUP_CRON_SKEL_FILE, "r") do |f|
+File.open(backup_cron_skel_file, "r") do |f|
   f.each_line do |line| 
     line.gsub!(/@@CONFIG_BUCKET@@/, s3_bucket)
-    line.gsub!(/@@CONFIG_PREFIX@@/, s3_prefix) 
+    line.gsub!(/@@CONFIG_PREFIX@@/, s3_prefix)
+    line.gsub!(/@@YA_BACKUP_PATH@@/, ya_backup_path)
+    line.gsub!(/@@ENCRYPTION@@/, encryption)
+    line.gsub!(/@@ENCRYPTION_FOR@@/, encrypt_for)
     File.open(path, "w") do |file|
       temp_file.puts line
     end
