@@ -12,49 +12,98 @@
 # Currently using ruby-s3cmd gem to passthrough to local config of s3cmd for all s3 operations
 #
 # Example evocation: 
-# => .tar.gz file: ./ya_backup.rb yet-another-server-mail-config mail_config
-# => .tar.gpg file: ./ya_backup.rb yet-another-server-mail-config mail_config ENCRYPT
+# => .tar.gz file: ./ya_backup.rb --bucket yet-another-server-mail-config --backup-name mail_config
+# => .tar.gpg file: ./ya_backup.rb --bucket yet-another-server-mail-config --backup-name mail_config --encrypt --encrypt-for mark@someplace.com
 ########
 
 require 'rubygems'
+require 'getoptlong'
 require 'fileutils'
 require 'yaml'
 require 'ruby-s3cmd'
 
-# Populate from arguments 
-config_bucket = ARGV[0] 
-config_prefix = ARGV[1]
-if ! ARGV[2].nil?
-  if ARGV[2] == "ENCRYPT"
-    @encryption = TRUE
-  else
-    @encryption = FALSE
+# Define some constants and variables
+config_bucket = nil
+config_prefix = nil
+@encryption = FALSE
+@encrypt_for = nil
+backup_control_file = "/etc/ya_back_me_up.yml"
+HOME="/root"
+BACKUPFILE_DATE=`date +%Y%m%d%H%M`.strip
+
+begin
+  opts = GetoptLong.new(
+    [ '--bucket', '-b', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--backup-name', '-n', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--encrypt', '-e', GetoptLong::NO_ARGUMENT ],
+    [ '--encrypt-for', '-u', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--control-file', '-c', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--help', '-h', GetoptLong::NO_ARGUMENT ]
+  )
+
+  opts.each do |opt, arg|
+    case opt
+      when '--bucket', '-b'
+        config_bucket = arg
+      when '--backup-name', '-n'
+        config_prefix = arg
+      when '--encrypt', '-e'
+        @encryption = TRUE
+      when '--encrypt-for', '-u'
+        @encrypt_for = arg
+      when '--control-file', '-c'
+        backup_control_file = arg
+      when '--help', '-h'
+        puts <<-EOF
+ya_backup [OPTIONS]
+Ex1: ./ya_backup.rb --bucket yet-another-server-mail-config --backup-name mail_config
+Ex2: ./ya_backup.rb --bucket yet-another-server-mail-config --backup-name mail_config --encrypt --encrypt-for mark@someplace.com
+
+OPTIONS:
+-b, --bucket [string]:
+  The name of the bucket you want to upload to.  Required.
+  
+-n, --backup-name [string]:
+  The name of the backup, used for both the prefix of the backup file itself as well as
+  for finding the information for the backup in the control file. Required.
+  
+-e, --encrypt:
+  Toggles encryption via gpg of the tar file before uploading to s3.  Optional, although
+  if provided you must also provide the '--encrypt-for' flag.
+  
+-u, --encrypt-for [string]:
+  Used in conjunction with the '--encrypt' flag to provide the information from your gpg
+  keychain to identify what user to encrypt the data for.  
+  Eg, 'Mark' or 'some.guy@gmail.com.' Optional.
+  
+-c, --control-file [string]:
+  Allows overriding of default location of backups control file and name.  Optional, 
+  defaults to '/etc/ya_back_me_up.yml'      
+        EOF
+        exit 0
+    end
   end
-else
-  @encryption = FALSE
+  
+rescue GetoptLong::InvalidOption => ex
+  puts "Needed arguments seem to be incorrect.  Try --help."
 end
 
-# Make sure we passed needed arguments for config bucket and prefix
-if config_bucket.nil? or config_prefix.nil?
-  puts "Needed arguments seem to be missing.  Invoke backup script and pass along config_bucket and then config_prefix!"
-  puts "Example: ./ya_backup.rb yet-another-server-mail-config mail_config" 
-  puts "-or-"
-  puts "Example: ./ya_backup.rb yet-another-server-mail-config mail_config ENCRYPT"
-  exit 1
-end 
-
-# Define some constants and variables
-HOME="/root"
-GPG_USERNAME_TO_ENCRYPT_FOR="Mark"
-BACKUP_CONTROL_FILE = "/etc/ya_back_me_up.yml"
-BACKUPFILE_DATE=`date +%Y%m%d%H%M`.strip
-BACKUPTMPDIR = "/tmp/#{config_prefix}_backup_temp_" + BACKUPFILE_DATE
-SUCCESSTOUCHFILE = "/var/run/#{config_prefix}_backup"
+# Sanity Checks for required flags and build our backup file name from options.
+if config_bucket.nil? || config_prefix.nil?
+  raise "Needed arguments --bucket and --backup-name are missing.  Try --help."
+end
 if @encryption
-  backupfilename = config_prefix + "-" + BACKUPFILE_DATE + ".tar.gpg"
+  if @encrypt_for.nil?
+    raise "--encrypt-for must be used with --encrypt flags"
+  else
+    backupfilename = config_prefix + "-" + BACKUPFILE_DATE + ".tar.gpg"
+  end
 else
   backupfilename = config_prefix + "-" + BACKUPFILE_DATE + ".tar.gz"
 end
+
+BACKUPTMPDIR = "/tmp/#{config_prefix}_backup_temp_" + BACKUPFILE_DATE
+SUCCESSTOUCHFILE = "/var/run/#{config_prefix}_backup"
 
 def backup_file_sanity_check(backup_control_file,config_prefix)
   #
@@ -127,7 +176,7 @@ def create_backup(backup_config_hash,config_prefix,backuptmpdir,backupfilename)
   FileUtils.cd backuptmpdir
   # use system commands to execute backup because I'm lazy
   if @encryption
-    `gpg-zip --encrypt --output #{backupfilename} -r #{GPG_USERNAME_TO_ENCRYPT_FOR} ./`
+    `gpg-zip --encrypt --output #{backupfilename} -r #{@encrypt_for} ./`
   else
     `tar -czf #{backupfilename} ./`
   end
@@ -172,7 +221,7 @@ end
 # Main execution
 
 puts "####### Backup started #######"
-backup_config_hash = backup_file_sanity_check(BACKUP_CONTROL_FILE,config_prefix)
+backup_config_hash = backup_file_sanity_check(backup_control_file,config_prefix)
 s3_result = get_s3_contents(config_bucket,config_prefix)
 create_backup(backup_config_hash,config_prefix,BACKUPTMPDIR,backupfilename)
 upload_to_s3(backupfilename,BACKUPTMPDIR,config_bucket)
