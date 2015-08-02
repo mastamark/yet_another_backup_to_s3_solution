@@ -15,6 +15,8 @@ require 'tempfile'
 s3_bucket = nil
 s3_prefix = nil
 frequency = nil
+preflight = nil
+postflight = nil
 max_backups = 14
 files_to_backup = []
 encryption = ""
@@ -32,6 +34,8 @@ begin
     [ '--hourly', GetoptLong::NO_ARGUMENT ],
     [ '--weekly', GetoptLong::NO_ARGUMENT ],
     [ '--monthly', GetoptLong::NO_ARGUMENT ],
+    [ '--preflight', GetoptLong::REQUIRED_ARGUMENT ],
+    [ '--postflight', GetoptLong::REQUIRED_ARGUMENT ],
     [ '--max-backups', '-m', GetoptLong::REQUIRED_ARGUMENT ],
     [ '--files', '-f', GetoptLong::REQUIRED_ARGUMENT ],
     [ '--encrypt', '-e', GetoptLong::NO_ARGUMENT ],
@@ -62,6 +66,10 @@ begin
         frequency = "weekly"
       when '--monthly'
         frequency = "monthly"
+      when '--preflight'
+        preflight = arg
+      when '--postflight'
+        postflight = arg
       when '--encrypt', '-e'
         encryption = "--encrypt"
       when '--encrypt-for', '-u'
@@ -75,7 +83,7 @@ begin
       when '--help', '-h'
         puts <<-EOF
 ya_configure_backup.rb [OPTIONS]
-Ex: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.conf
+Ex: ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/file.conf --preflight /bin/backup_prep.sh
 
 
 OPTIONS:
@@ -95,6 +103,10 @@ OPTIONS:
   
 --hourly, --daily, --weekly, --monthly:
   The period we want to be doing the backups.  Eg, "daily" backup.  Required.
+  
+--preflight, --postflight [string]:
+  Have the backup execute an arbitrary script/command before or after the creation of
+  the backup tarball.  Eg, "--preflight /bin/backup_prep.sh."  Optional.
   
 -e, --encrypt:
   Toggles encryption via gpg of the tar file before uploading to s3.  Optional, although
@@ -155,8 +167,11 @@ else
   exit(1)
 end
 
-# add our new backup config values to hash
-backup_config_hash[s3_prefix] = {"maxbackups" => [max_backups], "files" => files_to_backup}
+# add our new backup config values to backup hash.
+add_me = {"maxbackups" => [max_backups], "files" => files_to_backup}
+add_me["preflight"] = preflight if preflight
+add_me["postflight"] = postflight if postflight
+backup_config_hash[s3_prefix] = add_me
 
 # Write out new hash back to yaml file
 File.open(backup_control_file, "w") do |f|

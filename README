@@ -11,6 +11,12 @@ Essentially this set of scripts will use a control file in /etc/ to store what w
 
 It's very much a work in progress.
 
+What it can do
+--------------
+* Backups of files or recursively of folders or any mix into a single tar file, gpg encrypted or not on a cron-triggered schedule of hourly, daily, weekly or monthly.
+* Arbitrary preflight or postflight script execution during the backup creation phase. (handy for external `docker exec` or run calls)
+* Cleanup of old backups of that lineage based on a defined max quantity.
+
 Requirements
 ------------
 * Some sort of linux-y env

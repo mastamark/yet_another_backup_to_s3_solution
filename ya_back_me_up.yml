@@ -6,3 +6,5 @@ example_config:
   - /etc/group
   - /etc/mail
   - /whatever/you/need
+  preflight: /some/path/setupscript.sh
+  postflight: /cleanup/script.sh
