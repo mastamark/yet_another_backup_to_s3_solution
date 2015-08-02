@@ -16,7 +16,7 @@ Requirements
 * Some sort of linux-y env
 * Cron, specifically setup to with common '/etc/cron.[hourly|daily|weekly|monthly]/' style configuration
 * s3cmd - http://s3tools.org/s3cmd
-=> Configured with config file in ~root/.s3cmd
+=> Configured with config file in ~root/.s3cfg
 * Ruby (any flavor works as far as I know)
 * Rubygem "ruby-s3cmd" - https://rubygems.org/gems/s3cmd
 * [Optional] GPG should you want to encrypt your tarballs.
@@ -27,11 +27,9 @@ Install
 # Configure s3cmd config file for your host/user/box/whatever - http://s3tools.org/s3cmd-howto
 # Install ruby and make sure you can use rubygems with it
 $ gem install ruby-s3cmd
-$ git clone git@github.com:mastamark/yet_another_backup_to_s3_solution.git
-# Copy the files to the places you want them, eg.
-$ cp ./ya_back_me_up.yml /etc/
-$ cp ./ya_backup.rb /usr/sbin/
-$ # ...
+$ git clone git@github.com:mastamark/yet_another_backup_to_s3_solution.git ~root/ya_backup/
+# Copy the files to the places you want them, or just leave scripts in ~root/ya_backup/*
+=> RECOMMENDED - $ cp ./ya_back_me_up.yml /etc/
 
 Example Usage
 ------------- 
@@ -40,23 +38,28 @@ Example Usage
 #
 
 # ./ya_configure_backups.rb \
-  s3_bucket_name # name of your bucket in s3 \
-  s3_backupfile_prefix # what's the file name or prefix for this backup series (also the key in the control file yaml) \
-  max_backups # what's the maximum number of backups for this series before we delete the oldest \
-  frequency # how often to execute backup \
-  /files/to/,/backup.sh # csv of full paths of files to backup
+  --bucket <s3_bucket_name> # name of your bucket in s3 \
+  --backup-name <s3_backupfile_prefix> # what's the file name or prefix for this backup series (also the key in the control file yaml) \
+  --max-backups <#> # what's the maximum number of backups for this series before we delete the oldest \
+  --hourly|--daily|--weekly|--monthly # how often to execute backup \
+  --files /files/to/,/backup.sh # csv of full paths of files to backup
 
 # ex. - would update control file and write out cron entry to '/etc/cron.daily/' to the bucket 'yet-another-server-mail-config' with 7 tarballs max
-$ ./ya_configure_backups.rb yet-another-server-mail-config mail_config 7 daily /etc/mail,/some/other/mail/file.cf
+$ ./ya_configure_backups.rb --bucket yet-another-server-mail-config --backup-name mail_config --daily --max-backups 7 --files /etc/mail,/some/other/mail/file.cf
+
+Please see --help for full list of options.
 
 #
 # Execute backup
 #
 
 # ./ya_backup.rb \
-  config_bucket # name of our bucket we're backing up to \
-  backup_prefix # name of our backup file prefix \
-  [ENCRYPT] # optional argument to encrypt first using gpg
+  --bucket <s3_bucket_name> # name of our bucket we're backing up to \
+  --backup-name <s3_backupfile_prefix> # what's the file name or prefix for this backup series (also the key in the control file yaml)  \
+  --encrypt # gpg encryption go! \
+  --encrypt-for <email,name,etc> # the name or email of the person in our gpg keyring we want to gpg encrypt this data for
 
-# ex. - executes backups to s3 bucket 'yet-another-server-mail-config' with prefix 'mail_config' which would be gpg encrypted
-$ ./ya_backup.rb yet-another-server-mail-config mail_config ENCRYPT
+# ex. - executes backups to s3 bucket 'yet-another-server-mail-config' with prefix 'mail_config' that is encrypted via gpg for user 'mark@somerwhere.com'
+$ ./ya_backup.rb --bucket yet-another-server-mail-config --bucket-name mail_config --encrypt --encrypt-for mark@somewhere.com
+
+Please see --help for full list of options.

@@ -1,9 +1,9 @@
 #!/bin/bash -e
 
-# yet_another_backup_to_s3_solution cron skel file 
+# yet_another_backup_to_s3_solution cron skel file
 
 PATH=$PATH:/root:/usr/bin
 export PATH
 export HOME=/root
 
-/usr/sbin/ya_backup.rb @@CONFIG_BUCKET@@ @@CONFIG_PREFIX@@
+@@YA_BACKUP_PATH@@ --bucket @@CONFIG_BUCKET@@ --backup-name @@CONFIG_PREFIX@@ @@ENCRYPTION@@ @@ENCRYPTION_FOR@@
