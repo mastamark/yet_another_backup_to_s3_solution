@@ -163,7 +163,7 @@ end
 def create_backup(backup_config_hash,config_prefix,backuptmpdir,backupfilename)
   # Execute preflight script if defined in control hash
   if backup_config_hash[config_prefix]["preflight"]
-    puts "Executing preflight script '#{backup_config_hash[config_prefix]["preflight"]}"
+    puts "Executing preflight script '#{backup_config_hash[config_prefix]["preflight"]}'"
     `#{backup_config_hash[config_prefix]["preflight"]}`
   end
   # Define files to backup and frequency from config hash
@@ -189,9 +189,9 @@ def create_backup(backup_config_hash,config_prefix,backuptmpdir,backupfilename)
     raise "Backup creation appears to have failed!  Can't find #{backupfilename}"
   else
     puts "Backup #{backupfilename} created successfully!"
-    # Execute preflight script if defined in control hash
+    # Execute postflight script if defined in control hash
     if backup_config_hash[config_prefix]["postflight"]
-      puts "Executing postflight script '#{backup_config_hash[config_prefix]["postflight"]}"
+      puts "Executing postflight script '#{backup_config_hash[config_prefix]["postflight"]}'"
       `#{backup_config_hash[config_prefix]["postflight"]}`
     end
     return true
